@@ -125,7 +125,6 @@ def main():
     meta['seed'] = args.seed
 
 
-    # TODO: build the model network
     model = build_gan(
         cfg.model, train_cfg=cfg.train_cfg, test_cfg=cfg.test_cfg)
 

@@ -85,7 +85,7 @@ def train_gan(model,
         'opt_disc': build_optimizer(model, cfg.optimizer_disc)
     }
     runner = ProGANRunner(
-        model,
+        model=model,
         optimizer=optimizer,
         work_dir=cfg.work_dir,
         logger=logger,
@@ -101,15 +101,15 @@ def train_gan(model,
     # elif distributed and 'type' not in cfg.optimizer_config:
     #     optimizer_config = OptimizerHook(**cfg.optimizer_config)
     # else:
-    optimizer_config = cfg.optimizer_config
+    # optimizer_config = cfg.optimizer_config
 
     # register hooks
-    runner.register_training_hooks(cfg.lr_config, optimizer_config,
+    runner.register_training_hooks(lr_config=None, optimizer_config=None,
                                    cfg.checkpoint_config, cfg.log_config,
                                    cfg.get('momentum_config', None))
     if distributed:
         runner.register_hook(DistSamplerSeedHook())
-
+    runner.register_hook_from_cfg(self, cfg.save_image_config)
     # register eval hooks
     # if validate:
     #     val_dataset = build_dataset(cfg.data.val, dict(test_mode=True))

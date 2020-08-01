@@ -16,3 +16,11 @@ optimizer_disc = dict(type='Adam', lr=0.001, betas=(0,0.99), eps=1e-8, weight_de
 
 stage_epochs = [4, 4, 4, 4, 8, 16, 32, 64, 64]
 fade_in_percentages = [50, 50, 50, 50, 50, 50, 50, 50, 50]
+
+# hook to save image
+save_image_config = dict(
+    type='SaveImageHook',
+    interval=10,
+    by_epoch=False,
+    save_num=10,
+)

@@ -4,6 +4,7 @@ from mmcv.runner.utils import get_host_info
 from mmcv.runner.checkpoint import save_checkpoint
 import time
 from os import path as osp
+import numpy as np
 
 class ProGANRunner(IterBasedRunner):
 
@@ -11,6 +12,7 @@ class ProGANRunner(IterBasedRunner):
         super().__init__(**kwargs)
         self._total_depth = self.model.total_depth
         self._depth = 0
+        self._alpha = 0
 
     @property
     def total_depth(self):
@@ -19,6 +21,10 @@ class ProGANRunner(IterBasedRunner):
     @property
     def depth(self):
         return self._depth
+    
+    @property
+    def alpha(self):
+        return self._alpha
 
     def run(self, data_loaders, workflow, stage_epochs, fade_in_percentages, **kwargs):
 
@@ -30,6 +36,7 @@ class ProGANRunner(IterBasedRunner):
 
         stage_epochs = stage_epochs[:self.total_depth]
         fade_in_percentages = fade_in_percentages[:self.total_depth]
+        stage_epochs = np.cumsum(stage_epochs)
         self._max_epochs = sum(stage_epochs)
         for i, flow in enumerate(workflow):
             mode, epochs = flow
@@ -71,8 +78,9 @@ class ProGANRunner(IterBasedRunner):
                                     self.inner_iter >= len(data_loaders[i])):
                                 break
                             ticker = self.inner_iter + 1
-                            alpha = ticker / fade_point if ticker <= fade_point else 1
-                            iter_runner(data_loaders[i], depth=self.depth, alpha=alpha, **kwargs)
+                            self._alpha = ticker / fade_point if ticker <= fade_point else 1
+                            iter_runner(data_loaders[i], depth=self.depth, alpha=self.alpha, **kwargs)
+                self._epoch += 1
             self._depth += 1
 
         time.sleep(1)  # wait for some hooks like loggers to finish

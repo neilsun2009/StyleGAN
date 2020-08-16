@@ -29,8 +29,9 @@ class SaveImageHook(Hook):
         pseudo_input = np.array([[]]*self.save_num)
         result = runner.model(pseudo_input, runner.depth, runner.alpha, return_loss=False).cpu().detach()
         for i in range(self.save_num):
-            imgname = '{:03d}_{:03d}_{:03d}.jpg'.format(runner.epoch, runner.inner_iter, i)
+            imgname = '{:03d}/{:03d}_{:03d}.jpg'.format(runner.epoch, runner.inner_iter, i)
             save_path = os.path.join(self.out_dir, imgname)
+            os.makedirs(os.path.dirname(save_path) , exist_ok=True)
             imwrite(result[i].numpy().transpose(1, 2, 0), save_path)
         del result
 

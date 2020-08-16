@@ -22,5 +22,5 @@ save_image_config = dict(
     type='SaveImageHook',
     interval=1,
     by_epoch=True,
-    save_num=10,
+    save_num=20,
 )

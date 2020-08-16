@@ -101,6 +101,9 @@ class ProGANRunner(IterBasedRunner):
                                 break
                             ticker = self.inner_iter + 1
                             self._alpha = ticker / fade_point if ticker <= fade_point else 1
+                            if self.iter % 100 == 0:
+                                print('depth: {}, alpha: {}'.format(self.depth, self.alpha))
+                                print('iter: {}, inner_iter: {}'.format(self.iter, self.inner_iter))
                             iter_runner(iter_loaders[i], depth=self.depth, alpha=self.alpha, **kwargs)
                 self._epoch += 1
                 self.call_hook('after_train_epoch')

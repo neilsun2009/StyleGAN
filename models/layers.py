@@ -15,9 +15,10 @@ class PixelwiseNorm(nn.Module):
         return x * y
 
 class EqualizedLinear(nn.Module):
-
-    def __init__(self, in_features, out_features, bias=True, bias_init=0):
+    # from https://github.com/lernapparat/lernapparat/blob/master/style_gan/pytorch_style_gan.ipynb
+    def __init__(self, in_features, out_features, gain=2**(0.5), use_wscale=True, lrmul=1, bias=True, bias_init=0):
         super(EqualizedLinear, self).__init__()
+        he_std = gain * in_features**(-0.5)
         self.bias = bias
         self.weight_param = nn.Parameter(torch.FloatTensor(out_features, in_features).normal_(0.0, 1.0))
         if self.bias:

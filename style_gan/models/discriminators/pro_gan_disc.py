@@ -11,14 +11,14 @@ from ..layers import (PixelwiseNorm, EqualizedConv2d,
 from ..builder import DISCRIMINATORS
 
 
-class DownsampleLayer(nn.Module):
+# class DownsampleLayer(nn.Module):
 
-    def __init__(self):
-        super().__init__()
-        self.avg_pool = nn.AvgPool2d(kernel_size=2)
+#     def __init__(self):
+#         super().__init__()
+#         self.avg_pool = nn.AvgPool2d(kernel_size=2)
 
-    def forward(self, x):
-        return self.avg_pool(x)
+#     def forward(self, x):
+#         return self.avg_pool(x)
 
 class View(nn.Module):
     def __init__(self, *shape):
@@ -47,14 +47,15 @@ class MinibatchStddev(nn.Module):
 
 class DiscBlock(nn.Module):
 
-    def __init__(self, in_channels, out_channels, activation):
+    def __init__(self, in_channels, out_channels, activation, use_wscale=True):
         super().__init__()
         layers = []
-        layers.append(('conv1', EqualizedConv2d(in_channels, in_channels)))
+        layers.append(('conv1', EqualizedConv2d(in_channels, in_channels, use_wscale=use_wscale)))
         layers.append(('act1', activation))
-        layers.append(('conv2', EqualizedConv2d(in_channels, out_channels)))
+        layers.append(('blur', BlurLayer()))
+        layers.append(('conv2', EqualizedConv2d(in_channels, out_channels, use_wscale=use_wscale, downscale=True)))
         layers.append(('act2', activation))
-        layers.append(('downsample', DownsampleLayer()))
+        # layers.append(('downsample', DownsampleLayer()))
         self.layers = nn.Sequential(OrderedDict(layers))
     
     def forward(self, x):
@@ -63,16 +64,16 @@ class DiscBlock(nn.Module):
 
 class DiscLastBlock(nn.Module):
 
-    def __init__(self, in_channels, out_channels, activation):
+    def __init__(self, in_channels, inter_channels, out_channels=1, activation, resolution=4, use_wscale=True):
         super().__init__()
         layers = []
         layers.append(('mini_std', MinibatchStddev()))
-        layers.append(('conv1', EqualizedConv2d(in_channels + 1, in_channels)))
+        layers.append(('conv1', EqualizedConv2d(in_channels + 1, in_channels, use_wscale=use_wscale)))
         layers.append(('act1', activation))
-        layers.append(('conv2', EqualizedConv2d(in_channels, out_channels, kernel_size=4, padding=0)))
         layers.append(('view', View(-1)))
+        layers.append(('dense', EqualizedLinear(in_channels * resolution * resolution, inter_channels, use_wscale=use_wscale)))
         layers.append(('act2', activation))
-        layers.append(('dense', EqualizedLinear(out_channels, 1)))
+        layers.append(('dense', EqualizedLinear(inter_channels, out_channels, gain=1, use_wscale=use_wscale)))
         self.layers = nn.Sequential(OrderedDict(layers))
     
     def forward(self, x):
@@ -105,17 +106,17 @@ class ProGANDisc(nn.Module):
         # blocks
         blocks = []
         from_rgbs = []
-        for cur_depth in range(self.total_depth-1, 0, -1):
+        for cur_depth in range(self.total_depth, 1, -1):
             cur_channels = nf(cur_depth)
             next_channels = nf(cur_depth-1)
             from_rgbs.append(EqualizedConv2d(3, cur_channels, kernel_size=1, padding=0))
             blocks.append(DiscBlock(cur_channels, next_channels, self.activation))
-        from_rgbs.append(EqualizedConv2d(3, nf(0), kernel_size=1, padding=0))
-        blocks.append(DiscLastBlock(nf(0), nf(0), self.activation))
+        from_rgbs.append(EqualizedConv2d(3, nf(1), kernel_size=1, padding=0))
+        blocks.append(DiscLastBlock(nf(1), nf(1), self.activation))
         
         self.from_rgbs = nn.ModuleList(from_rgbs)
         self.blocks = nn.ModuleList(blocks)
-        self.downsample_layer = DownsampleLayer()
+        self.downsample_layer = nn.AvgPool2d(2)
 
     def forward(self, img_in, depth, alpha):
         assert depth >= 0 and depth < self.total_depth

@@ -34,9 +34,9 @@ model = dict(
         )
     ),
     loss_gen=dict(
-        type='ProGANLossGen',
+        type='LogisticLossGen',
     ),
     loss_disc=dict(
-        type='ProGANLossDisc',
+        type='LogisticLossDisc',
     )
 )

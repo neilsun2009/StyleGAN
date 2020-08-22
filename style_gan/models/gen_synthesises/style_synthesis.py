@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import math
 from collections import OrderedDict
 from ..layers import (PixelwiseNorm, EqualizedConv2d,
-    EqualizedLinear)
+    EqualizedLinear, BlurLayer)
 
 from ..builder import (GEN_SYNTHESISES)
 
@@ -18,16 +18,18 @@ class InputLayer(nn.Module):
         # need bias?
         self.bias = nn.Parameter(torch.zeros(out_channels))
 
-    def forward(self):
-        return self.const + self.bias.view(1, -1, 1, 1)
+    def forward(self, style_latent):
+        batch_size = style_latent.size(0)
+        x = self.const.expand(batch_size, -1, -1, ,-1)
+        return x + self.bias.view(1, -1, 1, 1)
 
-class UpsampleLayer(nn.Module):
+# class UpsampleLayer(nn.Module):
 
-    def __init__(self):
-        super().__init__()
+#     def __init__(self):
+#         super().__init__()
 
-    def forward(self, x):
-        return F.interpolate(x, scale_factor=2, mode='nearest')
+#     def forward(self, x):
+#         return F.interpolate(x, scale_factor=2, mode='nearest')
 
 class NoiseLayer(nn.Module):
 
@@ -42,26 +44,27 @@ class NoiseLayer(nn.Module):
 
 class StyleAdaIN(nn.Module):
 
-    def __init__(self, channels, style_channels):
+    def __init__(self, channels, style_channels, use_wscale=True):
         super().__init__()
+        # TODO instance norm place
         self.instance_norm = nn.InstanceNorm2d(channels)
-        self.affine_w = EqualizedLinear(style_channels, channels,
-            bias_init=1)
-        self.affine_b = EqualizedLinear(style_channels, channels)
+        self.affine = EqualizedLinear(style_channels, channels * 2,
+            gain=1.0, use_wscale=use_wscale)
 
     def forward(self, x, style_latent):
         x = self.instance_norm(x)
-        style_w = self.affine_w(style_latent[:, 0]).view(-1, x.size(1), 1, 1)
-        style_b = self.affine_b(style_latent[:, 1]).view(-1, x.size(1), 1, 1)
-        return x * style_w + style_b
+        style = self.affine(style_latent)
+        shape = [-1, 2, x.size(1)] + [1] * (x.dim() -2)
+        style = style.view(shape)
+        return x * (style[:, 0] + 1.0) + style[:, 1]
 
 class PostConv(nn.Module):
 
-    def __init__(self, channels, style_channels, activation):
+    def __init__(self, channels, style_channels, activation, use_wscale=True):
         super().__init__()
         self.noise_layer = NoiseLayer(channels)
         self.activation = activation
-        self.style_adain = StyleAdaIN(channels, style_channels)
+        self.style_adain = StyleAdaIN(channels, style_channels, use_wscale=use_wscale)
 
     def forward(self, x, style_latent):
         x = self.noise_layer(x)
@@ -69,33 +72,36 @@ class PostConv(nn.Module):
         x = self.style_adain(x, style_latent)
         return x
 
-
 class SynthesisBlock(nn.Module):
 
     def __init__(self, in_channels, out_channels, style_channels,
-            activation, is_first_block=False):
+            activation, is_first_block=False, use_wscale=True, blur_filter=None):
         super().__init__()
+        if blur_filter:
+            blur = BlurLayer(blur_filter)
+        else:
+            blur = None
         self.is_first_block = is_first_block
         if self.is_first_block:
             self.input_layer = InputLayer(out_channels)
         else:
-            self.upsample = UpsampleLayer()
-            self.conv1 = EqualizedConv2d(in_channels, out_channels)
+            self.conv1 = EqualizedConv2d(in_channels, out_channels, use_wscale=use_wscale,
+                upscale=True, intermediate=blur)
         self.post_conv1 = PostConv(out_channels, style_channels,
-            activation)
-        self.conv2 = EqualizedConv2d(out_channels, out_channels)
+            activation, use_wscale=use_wscale)
+        self.conv2 = EqualizedConv2d(out_channels, out_channels, use_wscale=use_wscale)
         self.post_conv2 = PostConv(out_channels, style_channels,
-            activation)
+            activation, use_wscale=use_wscale)
     
     def forward(self, x, style_latent):
         if self.is_first_block:
-            x = self.input_layer()
+            x = self.input_layer(style_latent)
         else:
             x = self.upsample(x)
             x = self.conv1(x)
-        x = self.post_conv1(x, style_latent)
+        x = self.post_conv1(x, style_latent[:, 0])
         x = self.conv2(x)
-        x = self.post_conv2(x, style_latent)
+        x = self.post_conv2(x, style_latent[:, 1])
         return x
 
 
@@ -104,7 +110,7 @@ class StyleSynthesis(nn.Module):
     # ref https://github.com/SaoYan/GenerativeSkinLesion/blob/master/networks.py
 
     def __init__(self, in_channels, style_channels=512,
-            resolution=1024, activation=None):
+            resolution=1024, activation=None, use_wscale=True, blur_filter=[1, 2, 1]):
 
         def nf(depth):
             assert depth >= 0
@@ -128,18 +134,18 @@ class StyleSynthesis(nn.Module):
         self.total_depth = resolution_log2 - 1
         # later depth no starts from 0
         # blocks
-        blocks = [SynthesisBlock(nf(0), nf(0),
-            style_channels, self.activation, is_first_block=True)]
-        to_rgbs = [EqualizedConv2d(nf(0), 3, kernel_size=1, padding=0)]
-        for depth in range(1, self.total_depth):
+        blocks = [SynthesisBlock(nf(0), nf(1),
+            style_channels, self.activation, is_first_block=True, use_wscale=True)]
+        to_rgbs = [EqualizedConv2d(nf(0), 3, kernel_size=1, padding=0, gain=1, use_wscale=True)]
+        for depth in range(2, self.total_depth + 1):
             last_channels = nf(depth-1)
             cur_channels = nf(depth)
             blocks.append(SynthesisBlock(last_channels, cur_channels,
-                style_channels, self.activation))
-            to_rgbs.append(EqualizedConv2d(cur_channels, 3, kernel_size=1, padding=0))
+                style_channels, self.activation, use_wscale=True, blur_filter=blur_filter))
+            to_rgbs.append(EqualizedConv2d(cur_channels, 3, kernel_size=1, padding=0, gain=1, use_wscale=True))
         self.blocks = nn.ModuleList(blocks)
         self.to_rgbs = nn.ModuleList(to_rgbs)
-        self.upsample_layer = UpsampleLayer()
+        self.upsample_layer = lambda x: F.interpolate(x, scale_factor=2)
 
     def forward(self, style_latent, depth, alpha):
         assert depth >= 0 and depth < self.total_depth

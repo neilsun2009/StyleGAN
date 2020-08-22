@@ -60,6 +60,18 @@ class StyleGAN(nn.Module):
         gradients = gradients.view(gradients.size(0), -1)
         gradient_penalty = gradients.norm(2, dim=1).sub(1.).pow(2.).mean()
         return gradient_penalty
+
+    def r1_penalty(self, real_input, depth, alpha):
+        apply_loss_scaling = lambda x: x * torch.exp(x * torch.Tensor([np.float32(np.log(2.0))]).to(real_input.device))
+        undo_loss_scaling = lambda x: x * torch.exp(-x * torch.Tensor([np.float32(np.log(2.0))]).to(real_input.device))
+
+        real_input = autograd.Variable(real_input, requires_grad=True)
+        real_logit = self.discriminator(real_input, depth, alpha)
+        gradients = autograd.grad(outputs=real_logit, inputs=real_input,
+            grad_outputs=torch.ones_like(real_logit).to(real_input.device), create_graph=True, retain_graph=True)[0]
+        gradients = gradients.view(gradients.size(0), -1)
+        r1_penalty = torch.sum(torch.mul(gradients, gradients))
+        return r1_penalty
     
     def progressive_down_sampling(self, imgs, depth, alpha):
         down_sample_factor = int(np.power(2, self.total_depth - depth - 1))
@@ -90,9 +102,10 @@ class StyleGAN(nn.Module):
         disc_fake_input = self.generator(latent_input, depth, alpha).detach()
         disc_fake_output = self.discriminator(disc_fake_input, depth, alpha)
         # losses
-        gradient_penalty = self.gradient_penalty(imgs, disc_fake_input, depth, alpha)
+        # gradient_penalty = self.gradient_penalty(imgs, disc_fake_input, depth, alpha)
+        r1_penalty = self.r1_penalty(imgs, disc_fake_input, depth, alpha)
         losses['gen_loss'] = self.loss_gen(gen_score_output)
-        losses['disc_loss'] = self.loss_disc(disc_real_output, disc_fake_output, gradient_penalty=gradient_penalty)
+        losses['disc_loss'] = self.loss_disc(disc_real_output, disc_fake_output, r1_penalty=r1_penalty)
         return losses
 
     def forward_test(self, imgs, depth, alpha, **kwargs):

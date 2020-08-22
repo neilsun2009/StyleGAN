@@ -12,7 +12,7 @@ from ..builder import (GEN_MAPPINGS)
 class StyleMapping(nn.Module):
 
     def __init__(self, in_channels=512, out_channels=512, num_layers=8,
-            activation=None, resolution=1024):
+            activation=None, resolution=1024, use_wscale=True):
         super().__init__()
         self.num_layers = num_layers
         resolution_log2 = int(math.log(resolution, 2))
@@ -28,11 +28,11 @@ class StyleMapping(nn.Module):
             raise ValueError('Unsupported activation in mapping:', activation['type'])
         layers = list()
         layers.append(('mapping_norm', PixelwiseNorm()))
-        layers.append(('mapping_dense_0', EqualizedLinear(in_channels, out_channels)))
+        layers.append(('mapping_dense_0', EqualizedLinear(in_channels, out_channels, lrmul=0.01, use_wscale=True)))
         layers.append(('mapping_act_0', self.activation))
         for layer_idx in range(1, num_layers):
             layers.append(('mapping_dense_{}'.format(layer_idx),
-                EqualizedLinear(out_channels, out_channels)))
+                EqualizedLinear(out_channels, out_channels, lrmul=0.01, use_wscale=True)))
             layers.append(('mapping_act_{}'.format(layer_idx), self.activation))
         self.layers = nn.Sequential(OrderedDict(layers))
     

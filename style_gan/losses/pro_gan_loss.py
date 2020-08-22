@@ -12,6 +12,7 @@ class ProGANLossGen(nn.Module):
     def forward(self, disc_fake_output):
         return disc_fake_output.mean().mul(-1)
 
+
 @LOSSES.register_module()
 class ProGANLossDisc(nn.Module):
 
@@ -29,6 +30,3 @@ class ProGANLossDisc(nn.Module):
             general_loss += gradient_penalty * self.lambda_gp
         return  general_loss
             
-
-
-    

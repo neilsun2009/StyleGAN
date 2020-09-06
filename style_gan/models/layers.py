@@ -39,7 +39,7 @@ class EqualizedLinear(nn.Module):
     def forward(self, x):
         bias = self.bias_param
         if bias is not None:
-            bias *= self.b_mul
+            bias = bias * self.b_mul
         return F.linear(input=x,
                         weight=self.weight_param * self.w_mul,
                         bias=bias)
@@ -130,18 +130,16 @@ class EqualizedConv2d(nn.Module):
         self.weight_param = nn.Parameter(torch.randn(out_features, in_features, kernel_size, kernel_size) * init_std)
         if self.bias:
             self.bias_param = nn.Parameter(torch.zeros(out_features))
-        if bias:
-            self.bias_param = nn.Parameter(torch.zeros(output_channels))
             self.b_mul = lrmul
         else:
-            self.bias = None
+            self.bias_param = None
         # e.g. blur layer
         self.intermediate = intermediate
     
     def forward(self, x):
-        bias = self.bias
+        bias = self.bias_param
         if bias is not None:
-            bias *= self.b_mul
+            bias = bias * self.b_mul
         # upscale
         conv_scale = False
         if self.upscale:
@@ -163,7 +161,7 @@ class EqualizedConv2d(nn.Module):
                 x = F.conv2d(x, w, stride=2, padding=(w.size(-1)-1)//2)
                 conv_scale = True
             else:
-                assert self.intermediate is None:
+                assert self.intermediate is None
                 self.intermediate = self.downscale
         # conv
         if not conv_scale:

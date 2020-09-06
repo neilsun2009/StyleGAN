@@ -20,7 +20,7 @@ class InputLayer(nn.Module):
 
     def forward(self, style_latent):
         batch_size = style_latent.size(0)
-        x = self.const.expand(batch_size, -1, -1, ,-1)
+        x = self.const.expand(batch_size, -1, -1, -1)
         return x + self.bias.view(1, -1, 1, 1)
 
 # class UpsampleLayer(nn.Module):

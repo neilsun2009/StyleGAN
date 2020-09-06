@@ -103,7 +103,7 @@ class StyleGAN(nn.Module):
         disc_fake_output = self.discriminator(disc_fake_input, depth, alpha)
         # losses
         # gradient_penalty = self.gradient_penalty(imgs, disc_fake_input, depth, alpha)
-        r1_penalty = self.r1_penalty(imgs, disc_fake_input, depth, alpha)
+        r1_penalty = self.r1_penalty(imgs, depth, alpha)
         losses['gen_loss'] = self.loss_gen(gen_score_output)
         losses['disc_loss'] = self.loss_disc(disc_real_output, disc_fake_output, r1_penalty=r1_penalty)
         return losses

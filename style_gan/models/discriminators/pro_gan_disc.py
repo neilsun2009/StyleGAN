@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import math
 from collections import OrderedDict
 from ..layers import (PixelwiseNorm, EqualizedConv2d,
-    EqualizedLinear)
+    EqualizedLinear, BlurLayer)
 
 from ..builder import DISCRIMINATORS
 
@@ -64,16 +64,16 @@ class DiscBlock(nn.Module):
 
 class DiscLastBlock(nn.Module):
 
-    def __init__(self, in_channels, inter_channels, out_channels=1, activation, resolution=4, use_wscale=True):
+    def __init__(self, in_channels, inter_channels, activation, out_channels=1, resolution=4, use_wscale=True):
         super().__init__()
         layers = []
         layers.append(('mini_std', MinibatchStddev()))
         layers.append(('conv1', EqualizedConv2d(in_channels + 1, in_channels, use_wscale=use_wscale)))
         layers.append(('act1', activation))
         layers.append(('view', View(-1)))
-        layers.append(('dense', EqualizedLinear(in_channels * resolution * resolution, inter_channels, use_wscale=use_wscale)))
+        layers.append(('dense1', EqualizedLinear(in_channels * resolution * resolution, inter_channels, use_wscale=use_wscale)))
         layers.append(('act2', activation))
-        layers.append(('dense', EqualizedLinear(inter_channels, out_channels, gain=1, use_wscale=use_wscale)))
+        layers.append(('dense2', EqualizedLinear(inter_channels, out_channels, gain=1, use_wscale=use_wscale)))
         self.layers = nn.Sequential(OrderedDict(layers))
     
     def forward(self, x):

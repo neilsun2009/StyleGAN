@@ -27,10 +27,10 @@ train_pipeline = [
 # ]
 data = dict(
     samples_per_gpu=2,
-    workers_per_gpu=0,
+    workers_per_gpu=2,
     train=dict(
         type=dataset_type,
-        img_folder='data/full',
+        img_folder='/root/data1024x1024',
         pipeline=train_pipeline),
     # val=dict(
     #     type=dataset_type,

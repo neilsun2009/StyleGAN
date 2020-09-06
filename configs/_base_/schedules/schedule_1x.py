@@ -21,7 +21,7 @@ fade_in_percentages = [50, 50, 50, 50, 50, 50, 50, 50, 50]
 # hook to save image
 save_image_config = dict(
     type='SaveImageHook',
-    interval=1,
-    by_epoch=True,
-    save_num=20,
+    interval=100,
+    by_epoch=False,
+    save_num=10,
 )

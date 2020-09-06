@@ -109,10 +109,11 @@ class StyleGAN(nn.Module):
         return losses
 
     def forward_test(self, imgs, depth, alpha, **kwargs):
-        batch_size = imgs.shape[0]
-        latent_input = torch.randn(batch_size, self.latent_channels) \
-            .to(torch.cuda.current_device())
-        gen_output = self.generator(latent_input, depth, alpha)
+        # here imgs is latent input
+        # batch_size = imgs.shape[0]
+        # latent_input = torch.randn(batch_size, self.latent_channels) \
+        #     .to(torch.cuda.current_device())
+        gen_output = self.generator(imgs, depth, alpha)
         return gen_output
 
     def forward(self, img, depth, alpha, return_loss=True, **kwargs):

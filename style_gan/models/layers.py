@@ -56,10 +56,10 @@ class Upscale2d(nn.Module):
     def forward(self, x):
         assert x.dim() == 4
         x = x * self.gain
-        if factor != 1:
+        if self.factor != 1:
             shape = x.shape
-            x = x.view(*shape[:3], 1, shape[3], 1).expand(-1, -1, -1, factor, factor)
-            x = x.contiguous().view(shape[0], shape[1], factor * shape[2], factor * shape[3])
+            x = x.view(*shape[:3], 1, shape[3], 1).expand(-1, -1, -1, self.factor, -1, self.factor)
+            x = x.contiguous().view(shape[0], shape[1], self.factor * shape[2], self.factor * shape[3])
         return x
 
 class BlurLayer(nn.Module):
@@ -89,14 +89,14 @@ class Downscale2d(nn.Module):
         self.gain = gain
         self.factor = factor
         if self.factor == 2:
-            f = [np.sqrt(gain) / factor] * factor
+            f = [np.sqrt(gain) / self.factor] * self.factor
             self.blur = BlurLayer(kernel=f, normalize=False, stride=self.factor)
         else:
             self.blur = None
 
     def forward(self, x):
         assert x.dim() == 4
-        if self.blur and x.dtyle == torch.float32:
+        if self.blur and x.dtype == torch.float32:
             return self.blur(x)
         x = x * self.gain
         return F.avg_pool2d(x, self.factor)
@@ -142,7 +142,7 @@ class EqualizedConv2d(nn.Module):
             bias = bias * self.b_mul
         # upscale
         conv_scale = False
-        if self.upscale:
+        if self.upscale is not None:
             if min(x.shape[2:]) >= 64:
                 w = self.weight_param * self.w_mul
                 w = w.permute(1, 0, 2, 3)
@@ -153,28 +153,30 @@ class EqualizedConv2d(nn.Module):
             else:
                 x = self.upscale(x)
         
-        if self.downscale:
-            if min(x.shape[2:]) > 128:
+        downscale = self.downscale
+        intermediate = self.intermediate
+        if downscale is not None:
+            if min(x.shape[2:]) >= 128:
                 w = self.weight_param * self.w_mul
                 w = F.pad(w, (1, 1, 1, 1))
                 w = (w[:, :, 1:, 1:] + w[:, :, :-1, 1:] + w[:, :, 1:, :-1] + w[:, :, :-1, :-1]) * 0.25
                 x = F.conv2d(x, w, stride=2, padding=(w.size(-1)-1)//2)
                 conv_scale = True
             else:
-                assert self.intermediate is None
-                self.intermediate = self.downscale
+                assert intermediate is None
+                intermediate = downscale
         # conv
         if not conv_scale:
-            if not self.intermediate:
+            if intermediate is None:
                 return F.conv2d(x, weight=self.weight_param * self.w_mul, bias=bias,
                     stride=self.stride, padding=self.padding)
             else:
                 x = F.conv2d(x, weight=self.weight_param * self.w_mul, bias=None,
                     stride=self.stride, padding=self.padding)
         # intermediate
-        if self.intermediate:
-            x = self.intermediate(x)
-        if bias:
+        if intermediate is not None:
+            x = intermediate(x)
+        if bias is not None:
             x = x + bias.view(1, -1, 1, 1)
         return x
 

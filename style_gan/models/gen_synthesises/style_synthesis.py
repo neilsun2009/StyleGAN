@@ -16,7 +16,7 @@ class InputLayer(nn.Module):
         super().__init__()
         self.const = nn.Parameter(torch.ones(1, out_channels, 4, 4))
         # need bias?
-        self.bias = nn.Parameter(torch.zeros(out_channels))
+        self.bias = nn.Parameter(torch.ones(out_channels))
 
     def forward(self, style_latent):
         batch_size = style_latent.size(0)
@@ -39,7 +39,7 @@ class NoiseLayer(nn.Module):
 
     def forward(self, x):
         noise = torch.randn(x.size(0), 1, x.size(2), x.size(3), device=x.device, dtype=x.dtype)
-        x += self.weight.view(1, -1, 1, 1) * noise
+        x = x + self.weight.view(1, -1, 1, 1) * noise
         return x
 
 class StyleAdaIN(nn.Module):
@@ -56,7 +56,8 @@ class StyleAdaIN(nn.Module):
         style = self.affine(style_latent)
         shape = [-1, 2, x.size(1)] + [1] * (x.dim() -2)
         style = style.view(shape)
-        return x * (style[:, 0] + 1.0) + style[:, 1]
+        x = x * (style[:, 0] + 1.0) + style[:, 1]
+        return x
 
 class PostConv(nn.Module):
 
@@ -97,7 +98,6 @@ class SynthesisBlock(nn.Module):
         if self.is_first_block:
             x = self.input_layer(style_latent)
         else:
-            x = self.upsample(x)
             x = self.conv1(x)
         x = self.post_conv1(x, style_latent[:, 0])
         x = self.conv2(x)
@@ -136,8 +136,8 @@ class StyleSynthesis(nn.Module):
         # blocks
         blocks = [SynthesisBlock(nf(0), nf(1),
             style_channels, self.activation, is_first_block=True, use_wscale=True)]
-        to_rgbs = [EqualizedConv2d(nf(0), 3, kernel_size=1, padding=0, gain=1, use_wscale=True)]
-        for depth in range(2, self.total_depth + 1):
+        to_rgbs = [EqualizedConv2d(nf(1), 3, kernel_size=1, padding=0, gain=1, use_wscale=True)]
+        for depth in range(2, self.total_depth + 2):
             last_channels = nf(depth-1)
             cur_channels = nf(depth)
             blocks.append(SynthesisBlock(last_channels, cur_channels,

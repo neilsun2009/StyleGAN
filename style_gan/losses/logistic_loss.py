@@ -22,7 +22,7 @@ class LogisticLossDisc(nn.Module):
         self.softplus = nn.Softplus()
 
     def forward(self, disc_real_output, disc_fake_output, r1_penalty=None):
-        loss_real = self.softplus(disc_real_output).mean().mul(-1)
+        loss_real = self.softplus(-disc_real_output).mean()
         loss_fake = self.softplus(disc_fake_output).mean()
         # loss_real_drift = disc_real_output.pow(2).mean()
         general_loss = loss_real + loss_fake # + loss_real_drift * self.lambda_drift

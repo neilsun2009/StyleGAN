@@ -25,16 +25,19 @@ class SaveImageHook(Hook):
         os.makedirs(self.out_dir, exist_ok=True)
         self.save_num = save_num
         self.args = kwargs
+        self.fixed_input = torch.randn(save_num, 512).to(torch.cuda.current_device())
 
     def _save_images(self, runner):
-        pseudo_input = np.array([[]]*self.save_num)
-        result = runner.model(pseudo_input, runner.depth, runner.alpha, return_loss=False).cpu().detach()
+        # pseudo_input = np.array([[]]*self.save_num)
+        result = runner.model(self.fixed_input, runner.depth, runner.alpha, return_loss=False).cpu().detach()
         print(result.shape, torch.max(result), torch.min(result), flush=True)
         for i in range(self.save_num):
             imgname = '{:03d}/{:03d}_{:03d}.jpg'.format(runner.epoch, runner.inner_iter, i)
             save_path = os.path.join(self.out_dir, imgname)
             os.makedirs(os.path.dirname(save_path) , exist_ok=True)
-            imwrite(result[i].numpy().transpose(1, 2, 0), save_path)
+            img = result[i].numpy().transpose(1, 2, 0)
+            img = (img - np.min(img)) / (np.max(img) - np.min(img))
+            imwrite(img * 255, save_path)
         del result
 
     @master_only

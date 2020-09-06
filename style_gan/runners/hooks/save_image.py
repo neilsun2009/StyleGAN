@@ -6,6 +6,7 @@ from mmcv.runner.hooks import HOOKS, Hook
 import time
 import numpy as np
 from mmcv.image import imwrite
+import torch
 
 @HOOKS.register_module()
 class SaveImageHook(Hook):
@@ -28,6 +29,7 @@ class SaveImageHook(Hook):
     def _save_images(self, runner):
         pseudo_input = np.array([[]]*self.save_num)
         result = runner.model(pseudo_input, runner.depth, runner.alpha, return_loss=False).cpu().detach()
+        print(result.shape, torch.max(result), torch.min(result), flush=True)
         for i in range(self.save_num):
             imgname = '{:03d}/{:03d}_{:03d}.jpg'.format(runner.epoch, runner.inner_iter, i)
             save_path = os.path.join(self.out_dir, imgname)

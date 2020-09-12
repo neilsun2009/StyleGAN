@@ -109,7 +109,7 @@ class StyleGAN(nn.Module):
         optimizer['opt_disc'].zero_grad()
         disc_loss.backward()
         optimizer['opt_disc'].step()
-        losses['disc_loss'] = disc_loss.item()
+        losses['disc_loss'] = disc_loss.detach()
         # gen loss
         fake_samples = self.generator(gan_input, depth, alpha)
         # print('gen input {} ~ {}'.format(torch.min(fake_samples), torch.max(fake_samples)))
@@ -120,7 +120,7 @@ class StyleGAN(nn.Module):
         gen_loss.backward()
         nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=10.)
         optimizer['opt_gen'].step()
-        losses['gen_loss'] = gen_loss
+        losses['gen_loss'] = gen_loss.detach()
         
         return losses
 

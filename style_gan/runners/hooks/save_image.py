@@ -28,17 +28,18 @@ class SaveImageHook(Hook):
         self.fixed_input = torch.randn(save_num, 512).to(torch.cuda.current_device())
 
     def _save_images(self, runner):
-        # pseudo_input = np.array([[]]*self.save_num)
-        result = runner.model(self.fixed_input, runner.depth, runner.alpha, return_loss=False).cpu().detach()
-        print(result.shape, torch.max(result), torch.min(result), flush=True)
-        from torchvision.utils import save_image
-        from torch.nn.functional import interpolate
-        result = interpolate(result, scale_factor=1024//result.shape[1])
-        imgname = '{:03d}/{:03d}.jpg'.format(runner.epoch, runner.inner_iter)
-        save_path = os.path.join(self.out_dir, imgname)
-        os.makedirs(os.path.dirname(save_path) , exist_ok=True)
-        save_image(result, save_path, nrow=int(np.sqrt(self.save_num)),
-            normalize=True, scale_each=True, pad_value=128, padding=1)
+        with torch.no_grad():
+            # pseudo_input = np.array([[]]*self.save_num)
+            result = runner.model(self.fixed_input, runner.depth, runner.alpha, return_loss=False).cpu().detach()
+            print(result.shape, torch.max(result), torch.min(result), flush=True)
+            from torchvision.utils import save_image
+            from torch.nn.functional import interpolate
+            result = interpolate(result, scale_factor=1024//result.shape[1])
+            imgname = '{:03d}/{:03d}.jpg'.format(runner.epoch, runner.inner_iter)
+            save_path = os.path.join(self.out_dir, imgname)
+            os.makedirs(os.path.dirname(save_path) , exist_ok=True)
+            save_image(result, save_path, nrow=int(np.sqrt(self.save_num)),
+                normalize=True, scale_each=True, pad_value=128, padding=1)
         # for i in range(self.save_num):
         #     os.makedirs(os.path.dirname(save_path) , exist_ok=True)
         #     img = result[i].numpy().transpose(1, 2, 0)

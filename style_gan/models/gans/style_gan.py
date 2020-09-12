@@ -105,20 +105,22 @@ class StyleGAN(nn.Module):
         disc_fake_output = self.discriminator(fake_samples, depth, alpha)
         # gradient_penalty = self.gradient_penalty(imgs, disc_fake_input, depth, alpha)
         r1_penalty = self.r1_penalty(real_samples.detach(), depth, alpha)
-        losses['disc_loss'] = self.loss_disc(disc_real_output, disc_fake_output, r1_penalty=r1_penalty)
+        disc_loss = self.loss_disc(disc_real_output, disc_fake_output, r1_penalty=r1_penalty)
         optimizer['opt_disc'].zero_grad()
-        losses['disc_loss'].backward()
+        disc_loss.backward()
         optimizer['opt_disc'].step()
+        losses['disc_loss'] = disc_loss.item()
         # gen loss
         fake_samples = self.generator(gan_input, depth, alpha)
         # print('gen input {} ~ {}'.format(torch.min(fake_samples), torch.max(fake_samples)))
         gen_score_output = self.discriminator(fake_samples, depth, alpha)
         # print('gen fake output {} ~ {}'.format(torch.min(gen_score_output), torch.max(gen_score_output)))
-        losses['gen_loss'] = self.loss_gen(gen_score_output)
+        gen_loss = self.loss_gen(gen_score_output)
         optimizer['opt_gen'].zero_grad()
-        nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=1.)
-        losses['gen_loss'].backward()
+        gen_loss.backward()
+        nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=10.)
         optimizer['opt_gen'].step()
+        losses['gen_loss'] = gen_loss
         
         return losses
 

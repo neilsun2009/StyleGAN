@@ -31,6 +31,6 @@ class LogisticLossDisc(nn.Module):
         if r1_penalty is not None:
             general_loss += r1_penalty * self.lambda_r1 * 0.5
         # print('real loss {}, fake loss {}, r1 loss {}'.format(loss_real,
-            loss_fake, r1_penalty))
+            # loss_fake, r1_penalty))
         return  general_loss
     

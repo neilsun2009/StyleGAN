@@ -4,7 +4,7 @@ import mmcv
 import numpy as np
 import torch
 from mmcv.parallel import DataContainer as DC
-
+from torchvision.transforms import ToTensor as V_ToTensor
 from ..builder import PIPELINES
 
 
@@ -36,7 +36,9 @@ class ToTensor(object):
 
     def __call__(self, results):
         for key in self.keys:
-            results[key] = to_tensor(results[key])
+            # results[key] = to_tensor(results[key])
+            results[key] = V_ToTensor()(results[key])
+            
         return results
 
     def __repr__(self):

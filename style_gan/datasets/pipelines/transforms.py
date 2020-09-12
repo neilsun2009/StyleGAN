@@ -5,6 +5,7 @@ import numpy as np
 from numpy import random
 
 from ..builder import PIPELINES
+from torchvision.transforms import ToTensor, Normalize as V_Normalize, Compose, Resize, RandomHorizontalFlip
 
 
 @PIPELINES.register_module()
@@ -55,16 +56,17 @@ class RandomFlip(object):
         self.direction = direction
 
     def __call__(self, results):
-        if 'flip' not in results:
-            flip = True if np.random.rand() < self.flip_ratio else False
-            results['flip'] = flip
-        if 'flip_direction' not in results:
-            results['flip_direction'] = self.direction
-        if results['flip']:
-            # flip image
-            for key in results.get('img_fields', ['img']):
-                results[key] = mmcv.imflip(
-                    results[key], direction=results['flip_direction'])
+        # if 'flip' not in results:
+        #     flip = True if np.random.rand() < self.flip_ratio else False
+        #     results['flip'] = flip
+        # if 'flip_direction' not in results:
+        #     results['flip_direction'] = self.direction
+        # if results['flip']:
+        #     # flip image
+        for key in results.get('img_fields', ['img']):
+            # results[key] = mmcv.imflip(
+            #     results[key], direction=results['flip_direction'])
+            results[key] = RandomHorizontalFlip()(results[key])
         return results
 
     def __repr__(self):
@@ -88,8 +90,11 @@ class Normalize(object):
 
     def __call__(self, results):
         for key in results.get('img_fields', ['img']):
-            results[key] = mmcv.imnormalize(results[key], self.mean, self.std,
-                                            self.to_rgb)
+            # print('normalize input {} ~ {}'.format(np.min(results[key]), np.max(results[key])))
+            # results[key] = mmcv.imnormalize(results[key], self.mean, self.std,
+            #                                 self.to_rgb)
+            results[key] = V_Normalize(mean=self.mean, std=self.std)(results[key])
+            # print('normalize output {} ~ {}'.format(np.min(results[key]), np.max(results[key])))
         results['img_norm_cfg'] = dict(
             mean=self.mean, std=self.std, to_rgb=self.to_rgb)
         return results

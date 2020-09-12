@@ -2,6 +2,7 @@ import os.path as osp
 
 import mmcv
 import numpy as np
+from PIL import Image
 
 from ..builder import PIPELINES
 
@@ -38,20 +39,23 @@ class LoadImageFromPath(object):
 
         filename = results['img_path']
 
-        img_bytes = self.file_client.get(filename)
-        img = mmcv.imfrombytes(img_bytes, flag=self.color_type)
-        if self.to_float32:
-            img = img.astype(np.float32)
+        img = Image.open(filename).convert('RGB')
+
+        # img_bytes = self.file_client.get(filename)
+        # img = mmcv.imfrombytes(img_bytes, flag=self.color_type)
+        # if self.to_float32:
+        #     img = img.astype(np.float32)
 
         results['filename'] = filename
         results['ori_filename'] = results['img_path']
         results['img'] = img
-        results['img_shape'] = img.shape
-        results['ori_shape'] = img.shape
+        # results['img_shape'] = img.shape
+        # results['ori_shape'] = img.shape
         # Set initial values for default meta_keys
-        results['pad_shape'] = img.shape
+        # results['pad_shape'] = img.shape
         results['scale_factor'] = 1.0
-        num_channels = 1 if len(img.shape) < 3 else img.shape[2]
+        # num_channels = 1 if len(img.shape) < 3 else img.shape[2]
+        num_channels = 3
         results['img_norm_cfg'] = dict(
             mean=np.zeros(num_channels, dtype=np.float32),
             std=np.ones(num_channels, dtype=np.float32),

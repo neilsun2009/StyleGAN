@@ -106,10 +106,8 @@ def train_gan(model,
     # optimizer_config = cfg.optimizer_config
 
     # register hooks
-    runner.register_training_hooks(lr_config=None, optimizer_config=None,
-                                   checkpoint_config=cfg.checkpoint_config, 
-                                   log_config=cfg.log_config,
-                                   momentum_config=cfg.get('momentum_config', None))
+    runner.register_training_hooks(checkpoint_config=cfg.checkpoint_config, 
+                                   log_config=cfg.log_config)
     if distributed:
         runner.register_hook(DistSamplerSeedHook())
     runner.register_hook_from_cfg(cfg.save_image_config)

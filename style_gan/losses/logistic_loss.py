@@ -8,25 +8,29 @@ class LogisticLossGen(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.softplus = nn.Softplus()
+        # self.softplus = nn.Softplus()
 
     def forward(self, disc_fake_output):
-        return self.softplus(-disc_fake_output).mean()
+        print('gen loss {}'.format(nn.Softplus()(-disc_fake_output).mean()))
+        return torch.mean(nn.Softplus()(-disc_fake_output))
 
 @LOSSES.register_module()
 class LogisticLossDisc(nn.Module):
 
-    def __init__(self, lambda_r1=10):
+    def __init__(self, lambda_r1=10.):
         super().__init__()
         self.lambda_r1 = lambda_r1
-        self.softplus = nn.Softplus()
 
     def forward(self, disc_real_output, disc_fake_output, r1_penalty=None):
-        loss_real = self.softplus(-disc_real_output).mean()
-        loss_fake = self.softplus(disc_fake_output).mean()
+        print('real output {} ~ {}'.format(torch.min(disc_real_output), torch.max(disc_real_output)))
+        print('fake output {} ~ {}'.format(torch.min(disc_fake_output), torch.max(disc_fake_output)))
+        loss_real = torch.mean(nn.Softplus()(-disc_real_output))
+        loss_fake = torch.mean(nn.Softplus()(disc_fake_output))
         # loss_real_drift = disc_real_output.pow(2).mean()
         general_loss = loss_real + loss_fake # + loss_real_drift * self.lambda_drift
         if r1_penalty is not None:
             general_loss += r1_penalty * self.lambda_r1 * 0.5
+        print('real loss {}, fake loss {}, r1 loss {}'.format(loss_real,
+            loss_fake, r1_penalty))
         return  general_loss
     

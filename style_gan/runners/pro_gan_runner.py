@@ -2,17 +2,45 @@ from mmcv.runner import IterBasedRunner, IterLoader
 import mmcv
 from mmcv.runner.utils import get_host_info
 from mmcv.runner.checkpoint import save_checkpoint
+from mmcv.runner.hooks import HOOKS, Hook, IterTimerHook
+from mmcv.runner.priority import get_priority
+from mmcv.runner.dist_utils import get_dist_info
+from mmcv.runner.log_buffer import LogBuffer
 import time
 from os import path as osp
 import numpy as np
 
-class ProGANRunner(IterBasedRunner):
+class ProGANRunner:
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._total_depth = self.model.module.total_depth
+    def __init__(self, model, optimizer=None, logger=None,
+            meta=None, work_dir='', **kwargs):
         self._depth = 0
         self._alpha = 0
+        self.model = model
+        self._total_depth = self.model.module.total_depth
+        self._hooks = []
+        self._epoch = 0
+        self._iter = 0
+        self._inner_iter = 0
+        self._max_epochs = 0
+        self._max_iters = 0
+        self.optimizer = optimizer
+        self.work_dir = work_dir
+        self.logger = logger
+        self.meta = meta
+        self._rank, self._world_size = get_dist_info()
+        self.log_buffer = LogBuffer()
+
+    @property
+    def rank(self):
+        """int: Rank of current process. (distributed training)"""
+        return self._rank
+
+    @property
+    def world_size(self):
+        """int: Number of processes participating in the job.
+        (distributed training)"""
+        return self._world_size
 
     @property
     def total_depth(self):
@@ -25,6 +53,36 @@ class ProGANRunner(IterBasedRunner):
     @property
     def alpha(self):
         return self._alpha
+
+    @property
+    def hooks(self):
+        """list[:obj:`Hook`]: A list of registered hooks."""
+        return self._hooks
+
+    @property
+    def epoch(self):
+        """int: Current epoch."""
+        return self._epoch
+
+    @property
+    def iter(self):
+        """int: Current iteration."""
+        return self._iter
+
+    @property
+    def inner_iter(self):
+        """int: Iteration in an epoch."""
+        return self._inner_iter
+
+    @property
+    def max_epochs(self):
+        """int: Maximum training epochs."""
+        return self._max_epochs
+
+    @property
+    def max_iters(self):
+        """int: Maximum training iterations."""
+        return self._max_iters
     
     def train(self, data_loader, **kwargs):
         self.model.train()
@@ -76,10 +134,12 @@ class ProGANRunner(IterBasedRunner):
 
                 self._inner_iter = 0
                 for i, flow in enumerate(workflow):
+                    ticker = 1
                     mode, epochs = flow
                     iters = len(iter_loaders[i])
                     fade_point = int((fade_in_percentages[self.depth] / 100)
                                     * stage_epochs[self.depth] * iters)
+                    print('fade point: ', fade_point)
                     if isinstance(mode, str):  # self.train()
                         if not hasattr(self, mode):
                             raise ValueError(
@@ -95,12 +155,12 @@ class ProGANRunner(IterBasedRunner):
                         if mode == 'train' and self.epoch >= stage_epochs[self.depth]:
                             break
 
-                        for _ in range(iters):
+                        for __ in range(iters):
                             if mode == 'train' and (self.iter >= self.max_iters or
                                     self.inner_iter >= len(data_loaders[i])):
                                 break
-                            ticker = self.inner_iter + 1
                             self._alpha = ticker / fade_point if ticker <= fade_point else 1
+                            ticker += 1
                             if self.iter % 100 == 0:
                                 print('depth: {}, alpha: {}'.format(self.depth, self.alpha))
                                 print('iter: {}, inner_iter: {}'.format(self.iter, self.inner_iter))
@@ -159,7 +219,94 @@ class ProGANRunner(IterBasedRunner):
         if create_symlink:
             mmcv.symlink(filename, osp.join(out_dir, 'latest.pth'))
 
-    def register_lr_hook(self, lr_config):
-        if lr_config is None:
+    # def register_lr_hook(self, lr_config):
+    #     if lr_config is None:
+    #         return
+    #     super().register_lr_hook(lr_config)
+
+    def register_hook(self, hook, priority='NORMAL'):
+        """Register a hook into the hook list.
+        The hook will be inserted into a priority queue, with the specified
+        priority (See :class:`Priority` for details of priorities).
+        For hooks with the same priority, they will be triggered in the same
+        order as they are registered.
+        Args:
+            hook (:obj:`Hook`): The hook to be registered.
+            priority (int or str or :obj:`Priority`): Hook priority.
+                Lower value means higher priority.
+        """
+        assert isinstance(hook, Hook)
+        if hasattr(hook, 'priority'):
+            raise ValueError('"priority" is a reserved attribute for hooks')
+        priority = get_priority(priority)
+        hook.priority = priority
+        # insert the hook to a sorted list
+        inserted = False
+        for i in range(len(self._hooks) - 1, -1, -1):
+            if priority >= self._hooks[i].priority:
+                self._hooks.insert(i + 1, hook)
+                inserted = True
+                break
+        if not inserted:
+            self._hooks.insert(0, hook)
+
+    def register_hook_from_cfg(self, hook_cfg):
+        """Register a hook from its cfg.
+        Args:
+            hook_cfg (dict): Hook config. It should have at least keys 'type'
+              and 'priority' indicating its type and priority.
+        Notes:
+            The specific hook class to register should not use 'type' and
+            'priority' arguments during initialization.
+        """
+        hook_cfg = hook_cfg.copy()
+        priority = hook_cfg.pop('priority', 'NORMAL')
+        hook = mmcv.build_from_cfg(hook_cfg, HOOKS)
+        self.register_hook(hook, priority=priority)
+
+    def call_hook(self, fn_name):
+        """Call all hooks.
+        Args:
+            fn_name (str): The function name in each hook to be called, such as
+                "before_train_epoch".
+        """
+        for hook in self._hooks:
+            getattr(hook, fn_name)(self)
+
+    def register_checkpoint_hook(self, checkpoint_config):
+        if checkpoint_config is None:
             return
-        super().register_lr_hook(lr_config)
+        if isinstance(checkpoint_config, dict):
+            checkpoint_config.setdefault('type', 'CheckpointHook')
+            hook = mmcv.build_from_cfg(checkpoint_config, HOOKS)
+        else:
+            hook = checkpoint_config
+        self.register_hook(hook)
+
+    def register_logger_hooks(self, log_config):
+        if log_config is None:
+            return
+        log_interval = log_config['interval']
+        for info in log_config['hooks']:
+            logger_hook = mmcv.build_from_cfg(
+                info, HOOKS, default_args=dict(interval=log_interval))
+            self.register_hook(logger_hook, priority='VERY_LOW')
+
+    def register_training_hooks(self,
+                                checkpoint_config=None,
+                                log_config=None):
+        """Register default hooks for training.
+        Default hooks include:
+        - LrUpdaterHook
+        - MomentumUpdaterHook
+        - OptimizerStepperHook
+        - CheckpointSaverHook
+        - IterTimerHook
+        - LoggerHook(s)
+        """
+        # self.register_lr_hook(lr_config)
+        # self.register_momentum_hook(momentum_config)
+        # self.register_optimizer_hook(optimizer_config)
+        self.register_checkpoint_hook(checkpoint_config)
+        self.register_hook(IterTimerHook())
+        self.register_logger_hooks(log_config)

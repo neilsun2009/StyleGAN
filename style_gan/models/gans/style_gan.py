@@ -61,16 +61,16 @@ class StyleGAN(nn.Module):
         gradient_penalty = gradients.norm(2, dim=1).sub(1.).pow(2.).mean()
         return gradient_penalty
 
-    def r1_penalty(self, real_input, depth, alpha):
-        apply_loss_scaling = lambda x: x * torch.exp(x * torch.Tensor([np.float32(np.log(2.0))]).to(real_input.device))
-        undo_loss_scaling = lambda x: x * torch.exp(-x * torch.Tensor([np.float32(np.log(2.0))]).to(real_input.device))
+    def r1_penalty(self, real_img, depth, alpha):
+        apply_loss_scaling = lambda x: x * torch.exp(x * torch.Tensor([np.float32(np.log(2.0))]).to(real_img.device))
+        undo_loss_scaling = lambda x: x * torch.exp(-x * torch.Tensor([np.float32(np.log(2.0))]).to(real_img.device))
 
-        real_input = autograd.Variable(real_input, requires_grad=True)
-        real_logit = self.discriminator(real_input, depth, alpha)
-        gradients = autograd.grad(outputs=real_logit, inputs=real_input,
-            grad_outputs=torch.ones_like(real_logit).to(real_input.device), create_graph=True, retain_graph=True)[0]
-        gradients = gradients.view(gradients.size(0), -1)
-        r1_penalty = torch.sum(torch.mul(gradients, gradients))
+        real_img = autograd.Variable(real_img, requires_grad=True)
+        real_logit = self.discriminator(real_img, depth, alpha)
+        real_grads = torch.autograd.grad(outputs=real_logit, inputs=real_img,
+                                         grad_outputs=torch.ones(real_logit.size()).to(real_img.device),
+                                         create_graph=True, retain_graph=True)[0].view(real_img.size(0), -1)
+        r1_penalty = torch.sum(torch.mul(real_grads, real_grads))
         return r1_penalty
     
     def progressive_down_sampling(self, imgs, depth, alpha):
@@ -92,20 +92,34 @@ class StyleGAN(nn.Module):
     def forward_train(self, imgs, depth, alpha, **kwargs):
         losses = dict()
         batch_size = imgs.shape[0]
-        imgs = self.progressive_down_sampling(imgs, depth, alpha)
-        latent_input = torch.randn(batch_size, self.latent_channels) \
+        gan_input = torch.randn(batch_size, self.latent_channels) \
             .to(torch.cuda.current_device())
-        gen_img_output = self.generator(latent_input, depth, alpha)
-        gen_score_output = self.discriminator(gen_img_output, depth, alpha)
-
-        disc_real_output = self.discriminator(imgs, depth, alpha)
-        disc_fake_input = self.generator(latent_input, depth, alpha).detach()
-        disc_fake_output = self.discriminator(disc_fake_input, depth, alpha)
-        # losses
+        fake_samples = self.generator(gan_input, depth, alpha).detach()
+        real_samples = self.progressive_down_sampling(imgs, depth, alpha)
+        # print('real input {} ~ {}'.format(torch.min(real_samples), torch.max(real_samples)))
+        # print('fake input {} ~ {}'.format(torch.min(fake_samples), torch.max(fake_samples)))
+        optimizer = kwargs['optimizer']
+        # disc loss
+        disc_real_output = self.discriminator(real_samples, depth, alpha)
+        # disc_fake_input = self.generator(gan_input, depth, alpha).detach()
+        disc_fake_output = self.discriminator(fake_samples, depth, alpha)
         # gradient_penalty = self.gradient_penalty(imgs, disc_fake_input, depth, alpha)
-        r1_penalty = self.r1_penalty(imgs, depth, alpha)
-        losses['gen_loss'] = self.loss_gen(gen_score_output)
+        r1_penalty = self.r1_penalty(real_samples.detach(), depth, alpha)
         losses['disc_loss'] = self.loss_disc(disc_real_output, disc_fake_output, r1_penalty=r1_penalty)
+        optimizer['opt_disc'].zero_grad()
+        losses['disc_loss'].backward()
+        optimizer['opt_disc'].step()
+        # gen loss
+        fake_samples = self.generator(gan_input, depth, alpha)
+        # print('gen input {} ~ {}'.format(torch.min(fake_samples), torch.max(fake_samples)))
+        gen_score_output = self.discriminator(fake_samples, depth, alpha)
+        print('gen fake output {} ~ {}'.format(torch.min(gen_score_output), torch.max(gen_score_output)))
+        losses['gen_loss'] = self.loss_gen(gen_score_output)
+        optimizer['opt_gen'].zero_grad()
+        nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=1.)
+        losses['gen_loss'].backward()
+        optimizer['opt_gen'].step()
+        
         return losses
 
     def forward_test(self, imgs, depth, alpha, **kwargs):
@@ -147,14 +161,8 @@ class StyleGAN(nn.Module):
                 DDP, it means the batch size on each GPU), which is used for
                 averaging the logs.
         """
-        losses = self(**data, depth=depth, alpha=alpha)
-        # step
-        optimizer['opt_gen'].zero_grad()
-        losses['gen_loss'].backward()
-        optimizer['opt_gen'].step()
-        optimizer['opt_disc'].zero_grad()
-        losses['disc_loss'].backward()
-        optimizer['opt_disc'].step()
+        losses = self(**data, depth=depth, alpha=alpha, optimizer=optimizer)
+        
 
         loss, log_vars = self._parse_losses(losses)
         outputs = dict(

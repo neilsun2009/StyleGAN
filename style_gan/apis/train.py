@@ -83,8 +83,8 @@ def train_gan(model,
 
     # build runner
     optimizer = {
-        'opt_gen': build_optimizer(model, cfg.optimizer_gen),
-        'opt_disc': build_optimizer(model, cfg.optimizer_disc)
+        'opt_gen': build_optimizer(model.module.generator, cfg.optimizer_gen),
+        'opt_disc': build_optimizer(model.module.discriminator, cfg.optimizer_disc)
     }
     runner = ProGANRunner(
         model=model,

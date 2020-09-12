@@ -9,6 +9,7 @@ from mmcv.runner.log_buffer import LogBuffer
 import time
 from os import path as osp
 import numpy as np
+import torch
 
 class ProGANRunner:
 
@@ -223,6 +224,24 @@ class ProGANRunner:
     #     if lr_config is None:
     #         return
     #     super().register_lr_hook(lr_config)
+
+    def current_lr(self):
+        """Get current learning rates.
+        Returns:
+            list[float] | dict[str, list[float]]: Current learning rates of all
+                param groups. If the runner has a dict of optimizers, this
+                method will return a dict.
+        """
+        if isinstance(self.optimizer, torch.optim.Optimizer):
+            lr = [group['lr'] for group in self.optimizer.param_groups]
+        elif isinstance(self.optimizer, dict):
+            lr = dict()
+            for name, optim in self.optimizer.items():
+                lr[name] = [group['lr'] for group in optim.param_groups]
+        else:
+            raise RuntimeError(
+                'lr is not applicable because optimizer does not exist.')
+        return lr
 
     def register_hook(self, hook, priority='NORMAL'):
         """Register a hook into the hook list.

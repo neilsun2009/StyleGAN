@@ -113,7 +113,7 @@ class StyleGAN(nn.Module):
         fake_samples = self.generator(gan_input, depth, alpha)
         # print('gen input {} ~ {}'.format(torch.min(fake_samples), torch.max(fake_samples)))
         gen_score_output = self.discriminator(fake_samples, depth, alpha)
-        print('gen fake output {} ~ {}'.format(torch.min(gen_score_output), torch.max(gen_score_output)))
+        # print('gen fake output {} ~ {}'.format(torch.min(gen_score_output), torch.max(gen_score_output)))
         losses['gen_loss'] = self.loss_gen(gen_score_output)
         optimizer['opt_gen'].zero_grad()
         nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=1.)

@@ -87,7 +87,6 @@ class ProGANRunner(IterBasedRunner):
             while self.epoch < stage_epochs[self.depth]:
                 self.call_hook('before_train_epoch')
 
-                self._inner_iter = 0
                 for i, flow in enumerate(workflow):
                     mode, epochs = flow
                     iters = len(iter_loaders[i])
@@ -120,6 +119,7 @@ class ProGANRunner(IterBasedRunner):
                                 print('iter: {}, inner_iter: {}'.format(self.iter, self.inner_iter))
                             iter_runner(iter_loaders[i], depth=self.depth, alpha=self.alpha, **kwargs)
                 self._epoch += 1
+                self._inner_iter = 0
                 self.call_hook('after_train_epoch')
 
             self._depth += 1

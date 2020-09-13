@@ -24,5 +24,5 @@ save_image_config = dict(
     interval=50,
     by_epoch=False,
     save_num=36,
-    out_dir='/root/output/szb'
+    out_dir='/root/output/szb/images'
 )

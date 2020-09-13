@@ -11,37 +11,15 @@ from os import path as osp
 import numpy as np
 import torch
 
-class ProGANRunner:
+class ProGANRunner(IterBasedRunner):
 
-    def __init__(self, model, optimizer=None, logger=None,
-            meta=None, work_dir='', **kwargs):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._depth = 0
         self._alpha = 0
-        self.model = model
         self._total_depth = self.model.module.total_depth
-        self._hooks = []
-        self._epoch = 0
-        self._iter = 0
-        self._inner_iter = 0
-        self._max_epochs = 0
-        self._max_iters = 0
-        self.optimizer = optimizer
-        self.work_dir = work_dir
-        self.logger = logger
-        self.meta = meta
-        self._rank, self._world_size = get_dist_info()
-        self.log_buffer = LogBuffer()
+        self._ticker = 1
 
-    @property
-    def rank(self):
-        """int: Rank of current process. (distributed training)"""
-        return self._rank
-
-    @property
-    def world_size(self):
-        """int: Number of processes participating in the job.
-        (distributed training)"""
-        return self._world_size
 
     @property
     def total_depth(self):
@@ -56,34 +34,10 @@ class ProGANRunner:
         return self._alpha
 
     @property
-    def hooks(self):
-        """list[:obj:`Hook`]: A list of registered hooks."""
-        return self._hooks
+    def ticker(self):
+        return self._ticker
 
-    @property
-    def epoch(self):
-        """int: Current epoch."""
-        return self._epoch
-
-    @property
-    def iter(self):
-        """int: Current iteration."""
-        return self._iter
-
-    @property
-    def inner_iter(self):
-        """int: Iteration in an epoch."""
-        return self._inner_iter
-
-    @property
-    def max_epochs(self):
-        """int: Maximum training epochs."""
-        return self._max_epochs
-
-    @property
-    def max_iters(self):
-        """int: Maximum training iterations."""
-        return self._max_iters
+    
     
     def train(self, data_loader, **kwargs):
         self.model.train()
@@ -135,7 +89,6 @@ class ProGANRunner:
 
                 self._inner_iter = 0
                 for i, flow in enumerate(workflow):
-                    ticker = 1
                     mode, epochs = flow
                     iters = len(iter_loaders[i])
                     fade_point = int((fade_in_percentages[self.depth] / 100)
@@ -160,8 +113,8 @@ class ProGANRunner:
                             if mode == 'train' and (self.iter >= self.max_iters or
                                     self.inner_iter >= len(data_loaders[i])):
                                 break
-                            self._alpha = ticker / fade_point if ticker <= fade_point else 1
-                            ticker += 1
+                            self._alpha = self.ticker / fade_point if self.ticker <= fade_point else 1
+                            self._ticker += 1
                             if self.iter % 100 == 0:
                                 print('depth: {}, alpha: {}'.format(self.depth, self.alpha))
                                 print('iter: {}, inner_iter: {}'.format(self.iter, self.inner_iter))
@@ -170,7 +123,7 @@ class ProGANRunner:
                 self.call_hook('after_train_epoch')
 
             self._depth += 1
-
+            self._ticker = 1
         time.sleep(1)  # wait for some hooks like loggers to finish
         self.call_hook('after_run')
     
@@ -178,7 +131,11 @@ class ProGANRunner:
                checkpoint,
                **kwargs):
         super().resume(checkpoint, **kwargs)
+        checkpoint = self.load_checkpoint(
+                checkpoint,
+                map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device()))
         self._depth = checkpoint['meta']['depth']
+        self._ticker = checkpoint['meta']['ticker']
         self._inner_iter = checkpoint['meta']['inner_iter']
     
     def save_checkpoint(self,
@@ -202,9 +159,13 @@ class ProGANRunner:
                 Defaults to True.
         """
         if meta is None:
-            meta = dict(epoch=self.epoch, iter=self.iter + 1, inner_iter=self.inner_iter + 1, depth=self.depth)
+            meta = dict(epoch=self.epoch, iter=self.iter + 1, 
+                inner_iter=self.inner_iter + 1, depth=self.depth,
+                ticker=self.ticker)
         elif isinstance(meta, dict):
-            meta.update(epoch=self.epoch, iter=self.iter + 1, inner_iter=self.inner_iter + 1, depth=self.depth)
+            meta.update(epoch=self.epoch, iter=self.iter + 1, 
+                inner_iter=self.inner_iter + 1, depth=self.depth,
+                ticker=self.ticker)
         else:
             raise TypeError(
                 f'meta should be a dict or None, but got {type(meta)}')
@@ -225,91 +186,6 @@ class ProGANRunner:
     #         return
     #     super().register_lr_hook(lr_config)
 
-    def current_lr(self):
-        """Get current learning rates.
-        Returns:
-            list[float] | dict[str, list[float]]: Current learning rates of all
-                param groups. If the runner has a dict of optimizers, this
-                method will return a dict.
-        """
-        if isinstance(self.optimizer, torch.optim.Optimizer):
-            lr = [group['lr'] for group in self.optimizer.param_groups]
-        elif isinstance(self.optimizer, dict):
-            lr = dict()
-            for name, optim in self.optimizer.items():
-                lr[name] = [group['lr'] for group in optim.param_groups]
-        else:
-            raise RuntimeError(
-                'lr is not applicable because optimizer does not exist.')
-        return lr
-
-    def register_hook(self, hook, priority='NORMAL'):
-        """Register a hook into the hook list.
-        The hook will be inserted into a priority queue, with the specified
-        priority (See :class:`Priority` for details of priorities).
-        For hooks with the same priority, they will be triggered in the same
-        order as they are registered.
-        Args:
-            hook (:obj:`Hook`): The hook to be registered.
-            priority (int or str or :obj:`Priority`): Hook priority.
-                Lower value means higher priority.
-        """
-        assert isinstance(hook, Hook)
-        if hasattr(hook, 'priority'):
-            raise ValueError('"priority" is a reserved attribute for hooks')
-        priority = get_priority(priority)
-        hook.priority = priority
-        # insert the hook to a sorted list
-        inserted = False
-        for i in range(len(self._hooks) - 1, -1, -1):
-            if priority >= self._hooks[i].priority:
-                self._hooks.insert(i + 1, hook)
-                inserted = True
-                break
-        if not inserted:
-            self._hooks.insert(0, hook)
-
-    def register_hook_from_cfg(self, hook_cfg):
-        """Register a hook from its cfg.
-        Args:
-            hook_cfg (dict): Hook config. It should have at least keys 'type'
-              and 'priority' indicating its type and priority.
-        Notes:
-            The specific hook class to register should not use 'type' and
-            'priority' arguments during initialization.
-        """
-        hook_cfg = hook_cfg.copy()
-        priority = hook_cfg.pop('priority', 'NORMAL')
-        hook = mmcv.build_from_cfg(hook_cfg, HOOKS)
-        self.register_hook(hook, priority=priority)
-
-    def call_hook(self, fn_name):
-        """Call all hooks.
-        Args:
-            fn_name (str): The function name in each hook to be called, such as
-                "before_train_epoch".
-        """
-        for hook in self._hooks:
-            getattr(hook, fn_name)(self)
-
-    def register_checkpoint_hook(self, checkpoint_config):
-        if checkpoint_config is None:
-            return
-        if isinstance(checkpoint_config, dict):
-            checkpoint_config.setdefault('type', 'CheckpointHook')
-            hook = mmcv.build_from_cfg(checkpoint_config, HOOKS)
-        else:
-            hook = checkpoint_config
-        self.register_hook(hook)
-
-    def register_logger_hooks(self, log_config):
-        if log_config is None:
-            return
-        log_interval = log_config['interval']
-        for info in log_config['hooks']:
-            logger_hook = mmcv.build_from_cfg(
-                info, HOOKS, default_args=dict(interval=log_interval))
-            self.register_hook(logger_hook, priority='VERY_LOW')
 
     def register_training_hooks(self,
                                 checkpoint_config=None,

@@ -54,16 +54,32 @@ def train_gan(model,
                 f'{cfg.data.imgs_per_gpu} in this experiments')
         cfg.data.samples_per_gpu = cfg.data.imgs_per_gpu
 
-    data_loaders = [
-        build_dataloader(
-            ds,
-            cfg.data.samples_per_gpu,
-            cfg.data.workers_per_gpu,
-            # cfg.gpus will be ignored if distributed
-            len(cfg.gpu_ids),
-            dist=distributed,
-            seed=cfg.seed) for ds in dataset
-    ]
+    # data_loaders = list()
+    # for ds in dataset:
+    #     inner_loaders = list()
+    #     for samplers_per_gpu in cfg.data.samples_per_gpus:
+    #         inner_loaders.append(
+    #             build_dataloader(
+    #                 ds,
+    #                 samplers_per_gpu,
+    #                 cfg.data.workers_per_gpu,
+    #                 # cfg.gpus will be ignored if distributed
+    #                 len(cfg.gpu_ids),
+    #                 dist=distributed,
+    #                 seed=cfg.seed)
+    #         )
+    #     data_loaders.append(inner_loaders)
+
+    # data_loaders = [
+    #     build_dataloader(
+    #         ds,
+    #         cfg.data.samples_per_gpu,
+    #         cfg.data.workers_per_gpu,
+    #         # cfg.gpus will be ignored if distributed
+    #         len(cfg.gpu_ids),
+    #         dist=distributed,
+    #         seed=cfg.seed) for ds in dataset
+    # ]
 
     print('dataset length', len(dataset[0]))
 
@@ -128,4 +144,6 @@ def train_gan(model,
         runner.resume(cfg.resume_from)
     elif cfg.load_from:
         runner.load_checkpoint(cfg.load_from)
-    runner.run(data_loaders, cfg.workflow, cfg.stage_epochs, cfg.fade_in_percentages)
+    runner.run(dataset, cfg.data.samples_per_gpus,
+        cfg.workflow, cfg.stage_epochs, cfg.fade_in_percentages,
+        distributed=distributed, cfg=cfg)

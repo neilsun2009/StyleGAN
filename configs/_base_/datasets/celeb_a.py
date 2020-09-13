@@ -27,8 +27,8 @@ train_pipeline = [
 #         ])
 # ]
 data = dict(
-    samples_per_gpu=32,
-    workers_per_gpu=4,
+    samples_per_gpus=[32, 32, 16, 16, 16, 8, 4, 2, 2],
+    workers_per_gpu=1,
     train=dict(
         type=dataset_type,
         img_folder='/root/data1024x1024',

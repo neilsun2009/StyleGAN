@@ -10,6 +10,8 @@ import time
 from os import path as osp
 import numpy as np
 import torch
+import math
+from ..datasets.builder import build_dataloader
 
 class ProGANRunner(IterBasedRunner):
 
@@ -55,23 +57,33 @@ class ProGANRunner(IterBasedRunner):
         self._iter += 1
         self._inner_iter += 1
 
-    def run(self, data_loaders, workflow, stage_epochs, fade_in_percentages, **kwargs):
+    def run(self, datasets, samples_per_gpus, workflow, stage_epochs, fade_in_percentages, distributed=False,
+        cfg=None, **kwargs):
 
-        assert isinstance(data_loaders, list)
+        assert isinstance(datasets, list)
         assert mmcv.is_list_of(workflow, tuple)
-        assert len(data_loaders) == len(workflow)
+        assert len(datasets) == len(workflow)
         assert self.total_depth <= len(stage_epochs)
         assert self.total_depth <= len(fade_in_percentages)
 
         stage_epochs = stage_epochs[:self.total_depth]
         fade_in_percentages = fade_in_percentages[:self.total_depth]
-        stage_epochs = np.cumsum(stage_epochs)
         self._max_epochs = sum(stage_epochs)
+        cum_stage_epochs = np.cumsum(stage_epochs)
+        cum_epoch_iters = list()
         for i, flow in enumerate(workflow):
             mode, epochs = flow
+            dataset_length = len(datasets[i])
             if mode == 'train':
-                self._max_iters = self._max_epochs * len(data_loaders[i])
+                assert len(samples_per_gpus) == len(stage_epochs)
+                self._max_iters = 0
+                for samples_per_gpu, epochs in zip(samples_per_gpus, stage_epochs):
+                    loader_length = int(math.ceil(dataset_length / samples_per_gpu))
+                    self._max_iters += epochs * loader_length
+                    cum_epoch_iters += [loader_length] * epochs
                 break
+        cum_epoch_iters = np.cumsum(cum_epoch_iters)
+        # print(stage_epochs, cum_stage_epochs, cum_epoch_iters)
 
         work_dir = self.work_dir if self.work_dir is not None else 'NONE'
         self.logger.info('Start running, host: %s, work_dir: %s',
@@ -79,12 +91,22 @@ class ProGANRunner(IterBasedRunner):
         self.logger.info('workflow: %s, max: %d epochs', workflow, self.max_epochs)
         self.call_hook('before_run')
 
-        iter_loaders = [IterLoader(x) for x in data_loaders]
+        # iter_loaders = [[IterLoader(x) for x in inner_loaders] for inner_loaders in data_loaders]
 
         print(self.depth, self.total_depth, self.epoch, self.iter, self.inner_iter)
+        print(self.max_epochs, self.max_iters)
 
         while self.depth < self.total_depth:
-            while self.epoch < stage_epochs[self.depth]:
+            data_loaders = [build_dataloader(
+                ds,
+                samples_per_gpus[self.depth],
+                cfg.data.workers_per_gpu,
+                # cfg.gpus will be ignored if distributed
+                len(cfg.gpu_ids),
+                dist=distributed,
+                seed=cfg.seed) for ds in datasets]
+            iter_loaders = [IterLoader(x) for x in data_loaders]
+            while self.epoch < cum_stage_epochs[self.depth]:
                 self.call_hook('before_train_epoch')
 
                 for i, flow in enumerate(workflow):
@@ -105,7 +127,8 @@ class ProGANRunner(IterBasedRunner):
                                 type(mode)))
 
                     for _ in range(epochs):
-                        if mode == 'train' and self.epoch >= stage_epochs[self.depth]:
+                        if mode == 'train' and (self.epoch >= cum_stage_epochs[self.depth]
+                                or self.iter >= cum_epoch_iters[self.epoch]):
                             break
 
                         for __ in range(iters):
@@ -122,6 +145,8 @@ class ProGANRunner(IterBasedRunner):
                 self._inner_iter = 0
                 self.call_hook('after_train_epoch')
 
+            del data_loaders
+            del iter_loaders
             self._depth += 1
             self._ticker = 1
         time.sleep(1)  # wait for some hooks like loggers to finish

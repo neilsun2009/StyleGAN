@@ -68,6 +68,7 @@ class ProGANRunner(IterBasedRunner):
 
         stage_epochs = stage_epochs[:self.total_depth]
         fade_in_percentages = fade_in_percentages[:self.total_depth]
+        samples_per_gpus = samples_per_gpus[:self.total_depth]
         self._max_epochs = sum(stage_epochs)
         cum_stage_epochs = np.cumsum(stage_epochs)
         cum_epoch_iters = list()

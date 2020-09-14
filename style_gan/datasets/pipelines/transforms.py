@@ -20,15 +20,16 @@ class EasyResize(object):
     
     def __call__(self, results):
         for key in results.get('img_fields', ['img']):
-            img, w_scale, h_scale = mmcv.imresize(
-                results[key], (self.img_scale, self.img_scale), return_scale=True)
-            results[key] = img
-            scale_factor = np.array([w_scale, h_scale, w_scale, h_scale],
-                                    dtype=np.float32)
-            results['img_shape'] = img.shape
-            # in case that there is no padding
-            results['pad_shape'] = img.shape
-            results['scale_factor'] = scale_factor
+            # img, w_scale, h_scale = mmcv.imresize(
+            #     results[key], (self.img_scale, self.img_scale), return_scale=True)
+            # results[key] = img
+            # scale_factor = np.array([w_scale, h_scale, w_scale, h_scale],
+            #                         dtype=np.float32)
+            # results['img_shape'] = img.shape
+            # # in case that there is no padding
+            # results['pad_shape'] = img.shape
+            # results['scale_factor'] = scale_factor
+            results[key] = Resize((self.img_scale, self.img_scale))(results[key])
         return results
 
     def __repr__(self):

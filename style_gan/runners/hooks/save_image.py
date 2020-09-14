@@ -34,7 +34,7 @@ class SaveImageHook(Hook):
             print(result.shape, torch.max(result), torch.min(result), flush=True)
             from torchvision.utils import save_image
             from torch.nn.functional import interpolate
-            result = interpolate(result, scale_factor=1024//result.shape[1])
+            result = interpolate(result, scale_factor=512//result.shape[2])
             imgname = '{:03d}/{:03d}.jpg'.format(runner.epoch, runner.inner_iter)
             save_path = os.path.join(self.out_dir, imgname)
             os.makedirs(os.path.dirname(save_path) , exist_ok=True)
